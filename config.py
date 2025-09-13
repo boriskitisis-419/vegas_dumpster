@@ -148,6 +148,6 @@ CONFIG = {
         "model": "aura-2-luna-en"
       }
     },
-    "greeting": "Thank you for calling Vegas Dumpsters, Luna spaking. What can I do for you today?"
+    "greeting": "Thank you for calling Vegas Dumpsters, I'm Chris. What can I do for you today?"
   }
 }
