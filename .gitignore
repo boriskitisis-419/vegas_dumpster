@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+env/
+.venv/
+venv/
+.env/
+extra
+test/
+
+# Environment variables
+.env
+
+# VS Code settings (optional)
+.vscode/
+
+# macOS files (optional)
+.DS_Store
+
+# Pytest cache
+.pytest_cache/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+*,cover
+.hypothesis/
+
+# Profile files
+*.prof
+
+# Uv package manager lock file
+# Decide if you want to ignore or commit this. Uncomment if you want to ignore.
+# uv.lock
