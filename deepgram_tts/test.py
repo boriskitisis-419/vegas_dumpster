@@ -28,7 +28,7 @@ def text_to_speech_file(text: str) -> str:
     )
 
     # Generate unique file name
-    save_file_path = f"{uuid.uuid4()}.mp3"
+    save_file_path = f"{uuid.uuid4()}.ulaw"
 
     # Save response chunks into the file
     with open(save_file_path, "wb") as f:
@@ -36,12 +36,13 @@ def text_to_speech_file(text: str) -> str:
             if chunk:
                 f.write(chunk)
 
-    print(f"{save_file_path}: A new audio file was saved successfully!")
+    print(f"{save_file_path}: A new ulaw file was saved successfully!")
     return save_file_path
-
 
 if __name__ == "__main__":
     # Example usage
+    check_activity = "Hello! Are you still there?"
+    finish_call = "Seems like you are so busy! Thank you for your time. Have a great day."
     text = "Hello, this is a test of ElevenLabs text-to-speech."
-    output_file = text_to_speech_file(text)
+    output_file = text_to_speech_file(finish_call)
     print(f"Saved audio file: {output_file}")

@@ -7,6 +7,7 @@ from datetime import datetime
 from dumpster_functions import FUNCTION_MAP
 from config import CONFIG
 import os
+
 from dotenv import load_dotenv
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
@@ -21,20 +22,11 @@ elevenlabs = ElevenLabs(
     api_key=ELEVENLABS_API_KEY,
 )
 
-SILENCE_TIMEOUT = 50
-FINAL_TIMEOUT = 30
-
-def log(message):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+SILENCE_TIMEOUT = 20
+FINAL_TIMEOUT = 20
 
 async def stream_ulab_audio_from_bytes(audio_stream, session, chunk_size=3200, delay=0.02):
-    """
-    Stream audio from BytesIO to Twilio MediaStream WebSocket.
-    chunk_size: number of bytes per message
-    delay: optional delay between chunks to simulate real-time streaming
-    """
     audio_stream.seek(0)  # start from beginning
-
     audio_bytes = audio_stream.read()
 
     for i in range(0, len(audio_bytes), chunk_size):
@@ -48,7 +40,6 @@ async def stream_ulab_audio_from_bytes(audio_stream, session, chunk_size=3200, d
 
         try:
             await session.twilio_ws.send(json.dumps(media_msg))
-            # optional: simulate streaming rate
             await asyncio.sleep(delay)
         except Exception as e:
             print(f"[stream_ulaw_audio] Error sending chunk: {e}")
@@ -89,29 +80,23 @@ class CallSession:
         self.final_task = None        
 
     async def nudge(self):
-        log("[Silence Watchdog] User inactive. Sending nudge audio.")
+        print("[Silence Watchdog] User inactive. Sending nudge audio.")
         await stream_ulaw_audio("deepgram_tts/check_activity.ulaw", self)
         await asyncio.sleep(10.0)
-        self.final_task = asyncio.create_task(self.safe_final_hangup())
-
-    async def safe_final_hangup(self):
-        try:
-            await self.final_hangup()
-        except Exception as e:
-            log(f"[ERROR] final_hangup failed: {e}")
+        self.final_task = asyncio.create_task(self.final_hangup())
 
     async def final_hangup(self):
-        log("[Final Hangup] Playing final audio and closing call.")
+        print("[Final Hangup] Playing final audio and closing call.")
         await stream_ulaw_audio("deepgram_tts/finish_call.ulaw", self)
         await asyncio.sleep(6.0)
         await self.twilio_ws.close()
-        log("[Final Hangup] Twilio socket closed, call ended.")
+        print("[Final Hangup] Twilio socket closed, call ended.")
 
     async def start_silence_timer(self):
         if self.silence_task:
             self.silence_task.cancel()
         self.silence_task = asyncio.create_task(self._silence_watchdog())
-        log("[Silence Timer] Started/Reset.")
+        print("[Silence Timer] Started/Reset.")
 
     async def _silence_watchdog(self):
         await asyncio.sleep(SILENCE_TIMEOUT)
@@ -121,9 +106,9 @@ class CallSession:
 def execute_function_call(func_name, arguments):
     if func_name in FUNCTION_MAP:
         result = FUNCTION_MAP[func_name](**arguments)
-        log(f"[Function call] {func_name} result: {result}")
+        print(f"[Function call] {func_name} result: {result}")
         return result
-    log(f"[Function call] Unknown function: {func_name}")
+    print(f"[Function call] Unknown function: {func_name}")
     return {"error": f"Unknown function: {func_name}"}
 
 def create_function_call_response(func_id, func_name, result):
@@ -135,32 +120,23 @@ def create_function_call_response(func_id, func_name, result):
     }
 
 async def handle_function_call_request(decoded, session: CallSession):
-    finish_call_pending = None
     for function_call in decoded.get("functions", []):
         func_name = function_call["name"]
         func_id = function_call["id"]
         arguments = json.loads(function_call["arguments"])
-        log(f"[Function call request] {func_name}, arguments: {arguments}")
+        print(f"[Function call request] {func_name}, arguments: {arguments}")
 
         result = execute_function_call(func_name, arguments)
         response = create_function_call_response(func_id, func_name, result)
 
         if func_name == "finish_call" and arguments.get("client_wants_to_finish", False):
-            finish_call_pending = response
-        else:
-            try:
-                await session.sts_ws.send(json.dumps(response))
-                log(f"[Function call response] Sent: {func_name}")
-            except Exception as e:
-                log(f"[Function call response] Error sending: {e}")
-
-    if finish_call_pending:
-        try:
-            await session.sts_ws.send(json.dumps(finish_call_pending))
-            log(f"[Function call response] Sent finish_call")
             session.finish_call_sent = True
+            print(f"[Function call response] Sent finish_call")
+            print("aaa")
+        try:
+            await session.sts_ws.send(json.dumps(response))
         except Exception as e:
-            log(f"[Function call finish_call] Error sending: {e}")
+            print(f"[Function call finish_call] Error sending: {e}")
 
 # ------------------- Pre-recorded .ulaw streaming -------------------
 async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, delay: float = 0.02):
@@ -168,10 +144,10 @@ async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, de
         with open(file_path, "rb") as f:
             audio_bytes = f.read()
     except Exception as e:
-        log(f"[stream_ulaw_audio] Failed to read {file_path}: {e}")
+        print(f"[stream_ulaw_audio] Failed to read {file_path}: {e}")
         return
 
-    log(f"[Agent Audio] Streaming {file_path}, size={len(audio_bytes)} bytes")
+    print(f"[Agent Audio] Streaming {file_path}, size={len(audio_bytes)} bytes")
     for i in range(0, len(audio_bytes), chunk_size):
         chunk = audio_bytes[i:i+chunk_size]
         media_msg = {
@@ -181,13 +157,11 @@ async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, de
         }
         try:
             await session.twilio_ws.send(json.dumps(media_msg))
-            await session.twilio_ws.send(json.dumps(media_msg))
-
             await asyncio.sleep(delay)
         except Exception as e:
-            log(f"[stream_ulaw_audio] Error sending chunk: {e}")
+            print(f"[stream_ulaw_audio] Error sending chunk: {e}")
             break
-    log(f"[Agent Audio] Finished streaming {file_path}")
+    print(f"[Agent Audio] Finished streaming {file_path}")
 
 # ------------------- STS / Twilio handlers -------------------
 async def handle_text_message(decoded, session: CallSession):
@@ -197,10 +171,10 @@ async def handle_text_message(decoded, session: CallSession):
 
     if msg_type == "ConversationText":
         if msg_role == "assistant":
-            log(f"Bot: {msg_content}")
+            print(f"Bot: {msg_content}")
             await stream_agent_text(msg_content, session)
         else:
-            log(f"Chris: {msg_content}")
+            print(f"Chris: {msg_content}")
 
     if msg_type == "FunctionCallRequest":
         await handle_function_call_request(decoded, session)
@@ -211,7 +185,7 @@ async def sts_sender(sts_ws, audio_queue):
         try:
             await sts_ws.send(chunk)
         except Exception as e:
-            log(f"[sts_sender] Error sending chunk: {e}")
+            print(f"[sts_sender] Error sending chunk: {e}")
 
 async def sts_receiver(session: CallSession):
     try:
@@ -220,12 +194,12 @@ async def sts_receiver(session: CallSession):
                 try:
                     decoded = json.loads(message)
                 except Exception as e:
-                    log(f"[STS JSON parse error] {e}")
+                    print(f"[STS JSON parse error] {e}")
                     continue
                 mtype = decoded.get("type")
 
                 if mtype == "UserStartedSpeaking":
-                    log("[Barge-in] User started speaking.")
+                    print("[Barge-in] User started speaking.")
                     clear_message = {
                         "event": "clear",
                         "streamSid": getattr(session.twilio_ws, "streamsid", None),
@@ -236,20 +210,6 @@ async def sts_receiver(session: CallSession):
                     if session.silence_task:
                         session.silence_task.cancel()
                         session.silence_task = None
-                    if session.final_task:
-                        session.final_task.cancel()
-                        session.final_task = None
-
-                if mtype in ("Transcript", "UserUtterance", "UserTextMessage"):
-                    transcript_text = decoded.get("text") or decoded.get("utterance") or ""
-                    if transcript_text:
-                        log(f"[User] {transcript_text}")
-                    if session.silence_task:
-                        session.silence_task.cancel()
-                        session.silence_task = None
-                    if session.final_task:
-                        session.final_task.cancel()
-                        session.final_task = None
 
                 elif mtype == "AgentAudioDone":
                     if session.finish_call_sent:
@@ -263,7 +223,7 @@ async def sts_receiver(session: CallSession):
                     await handle_text_message(decoded, session)
 
     except Exception as e:
-        log(f"[sts_receiver] Exception: {e}")
+        print(f"[sts_receiver] Exception: {e}")
 
 async def twilio_receiver(twilio_ws, audio_queue):
     try:
@@ -273,20 +233,20 @@ async def twilio_receiver(twilio_ws, audio_queue):
                 event = data.get("event")
                 if event == "start":
                     twilio_ws.streamsid = data["start"]["streamSid"]
-                    log(f"[Twilio Receiver] Stream started, streamSid={twilio_ws.streamsid}")
+                    print(f"[Twilio Receiver] Stream started, streamSid={twilio_ws.streamsid}")
                 elif event == "media":
                     media = data["media"]
                     chunk = base64.b64decode(media["payload"])
                     if media["track"] == "inbound":
                         audio_queue.put_nowait(chunk)
                 elif event == "stop":
-                    log("[Twilio Receiver] Stream stopped.")
+                    print("[Twilio Receiver] Stream stopped.")
                     break
             except Exception as e:
-                log(f"[Twilio receiver error] {e}")
+                print(f"[Twilio receiver error] {e}")
                 break
     except Exception as e:
-        log(f"[twilio_receiver] Exception: {e}")
+        print(f"[twilio_receiver] Exception: {e}")
 
 async def twilio_handler(twilio_ws):
     audio_queue = asyncio.Queue()
@@ -296,7 +256,7 @@ async def twilio_handler(twilio_ws):
             extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
         ) as sts_ws:
             await sts_ws.send(json.dumps(CONFIG))
-            log("[Twilio Handler] Sent STS config.")
+            print("[Twilio Handler] Sent STS config.")
 
             session = CallSession(twilio_ws, sts_ws)
 
@@ -307,14 +267,14 @@ async def twilio_handler(twilio_ws):
                 return_exceptions=True,
             )
     except Exception as e:
-        log(f"[Twilio Handler] Exception: {e}")
+        print(f"[Twilio Handler] Exception: {e}")
         try:
             await twilio_ws.close()
         except: pass
 
 # ------------------- Main -------------------
 async def main():
-    log("[Server] Starting...")
+    print("[Server] Starting...")
     async with websockets.serve(twilio_handler, "0.0.0.0", 5000):
         await asyncio.Future()
 

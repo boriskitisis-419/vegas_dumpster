@@ -6,9 +6,6 @@ from zoneinfo import ZoneInfo
 with open("prompts/inbound_prompt.txt", "r", encoding="utf-8") as f:
     PROMPT = f.read()
 
-pst_time = datetime.now(ZoneInfo("America/Los_Angeles"))
-current_hour = pst_time.hour
-
 def load_description(file_path):
     path = Path(file_path)
     return path.read_text(encoding="utf-8") if path.exists() else ""
@@ -32,7 +29,6 @@ CONFIG = {
       "provider": {
         "type": "deepgram",
         "model": "nova-3",
-        "keyterms": ["hello", "goodbye"],    
       }
     },
     "think": {
@@ -49,16 +45,16 @@ CONFIG = {
           "parameters": {
             "type": "object",
             "properties": {
-              "prior_ordered": { "type": "boolean", "description": "I’d be happy to set it! May I ask if you’ve ordered from us before?" },
-              "customer_name": { "type": "string", "description": "Thank you for placing an order with us! Could I start by getting your name, please?" },
-              "size_yards": { "type": "string", "description": "Thanks (Customer name)! What size dumpster would you like? We have 10, 15, 20, 30, and 40-yard options available." },
-              "delivery_date": { "type": "string", "description": "When would you like the dumpster to be delivered?" },
-              "time_slot": { "type": "string", "description": "Which time slot would you like for the dumpster delivery?"},
-              "address": { "type": "string", "description": "Delivery address including ZIP code" },
-              "parking_instructions": { "type": "string", "description": "Where would you like the dumpster parked?" },
-              "surface_protection": { "type": "boolean", "description": "Would you like to add surface protection for $35 extra?" },
-              "contact_info": { "type": "string", "description": "Customer phone number/email" },
-              "payment_method": { "type": "string", "description": "Payment method (Card Number, CVC, Expiration Date, Billing Address)" },
+              "prior_ordered": { "type": "boolean", "description": "Whether the customer has ordered from us before"},
+              "customer_name": { "type": "string", "description": "Customer's full name"},
+              "size_yards": { "type": "string", "description": "Dumpster size (10, 15, 20, 30, or 40 yards)" },
+              "delivery_date": { "type": "string", "description": "Requested delivery date" },
+              "time_slot": { "type": "string", "description": "Preferred delivery time slot"},
+              "address": { "type": "string", "description": "Full delivery address, including ZIP code"},
+              "parking_instructions": { "type": "string", "description": "Instructions on where to place the dumpster" },
+              "surface_protection": { "type": "boolean", "description": "Whether to add surface protection for $35" },
+              "contact_info": { "type": "string", "description": "Customer phone number and email" },
+              "payment_method": { "type": "string", "description": "Payment details (card number, CVC, expiration, billing address)" },
             },
             "required": ["prior_ordered", "customer_name", "size_yards", "time_slot", "address", "parking_instructions", "surface_protection", "contact_info", "payment_method"]
           }
@@ -69,13 +65,34 @@ CONFIG = {
           "parameters": {
             "type": "object",
             "properties": {
-              "customer_name": { "type": "string", "description": "Thank you for placing an order! Could I start by getting your name, please?" },
-              "address": { "type": "string", "description": "Swap address including ZIP code" },
-              "swap_time": { "type": "string", "description": "Would you like that swapped out today?" },
-              "time_slot": { "type": "string", "description": "Which time slot would you like for the dumpster delivery?"},
-              "surface_protection": { "type": "boolean", "description": "Would you like to add surface protection for $35 extra?" },
-              "contact_info": { "type": "string", "description": "Customer phone number/email" },
-              "payment_method": { "type": "string", "description": "Payment method (Card Number, CVC, Expiration Date, Billing Address)" },
+              "customer_name": {
+                "type": "string",
+                "description": "Customer's full name"
+              },
+              "address": {
+                "type": "string",
+                "description": "Full swap address, including ZIP code"
+              },
+              "swap_time": {
+                "type": "string",
+                "description": "Requested date and time for the swap"
+              },
+              "time_slot": {
+                "type": "string",
+                "description": "Preferred time slot for the dumpster delivery"
+              },
+              "surface_protection": {
+                "type": "boolean",
+                "description": "Whether to add surface protection for $35"
+              },
+              "contact_info": {
+                "type": "string",
+                "description": "Customer phone number or email"
+              },
+              "payment_method": {
+                "type": "string",
+                "description": "Payment details (card number, CVC, expiration date, billing address)"
+              }
             },
             "required": ["customer_name", "address", "swap_time", "surface_protection", "contact_info", "payment_method",]
           }
@@ -86,8 +103,14 @@ CONFIG = {
           "parameters": {
             "type": "object",
             "properties": {
-              "customer_name": { "type": "string", "description": "Thank you very much for placing an order with our services. I need some information to process your order. First, can I have your name please?" },
-              "address": { "type": "string", "description": "Final pick up address including ZIP code" },
+              "customer_name": {
+                "type": "string",
+                "description": "Customer's full name"
+              },
+              "address": {
+                "type": "string",
+                "description": "Full address for final pickup, including ZIP code"
+              }
             },
             "required": ["customer_name", "address" ]
           }
@@ -98,12 +121,28 @@ CONFIG = {
           "parameters": {
             "type": "object",
             "properties": {
-              "customer_name": { "type": "string", "description": "Thank you very much for placing an order with our services. I need some information to process your order. First, can I have your name please?" },
-              "address": { "type": "string", "description": "Final pick up address including ZIP code" },
-              "extended_period": { "type": "string", "description": "Number of additional rental days" },
-              "contact_info": { "type": "string", "description": "Customer phone number/email" },
-              "payment_method": { "type": "string", "description": "Payment method (Card Number, CVC, Expiration Date, Billing Address)" },
+              "customer_name": {
+                "type": "string",
+                "description": "Customer's full name"
+              },
+              "address": {
+                "type": "string",
+                "description": "Full address for pickup, including ZIP code"
+              },
+              "extended_period": {
+                "type": "string",
+                "description": "Number of additional rental days requested"
+              },
+              "contact_info": {
+                "type": "string",
+                "description": "Customer phone number or email"
+              },
+              "payment_method": {
+                "type": "string",
+                "description": "Payment details (card number, CVC, expiration date, billing address)"
+              }
             },
+
             "required": ["address", "customer_name", "extended_period", "contact_info","payment_method"]
           }
         },
@@ -142,12 +181,6 @@ CONFIG = {
         },
       ]
     },
-    "speak": {
-      "provider": {
-        "type": "deepgram",
-        "model": "aura-2-luna-en"
-      }
-    },
-    "greeting": "Thank you for calling Vegas Dumpsters, I'm Chris. What can I do for you today?"
+    "greeting": "Hello! Thank you for calling Vegas Dumpsters. This is Chris—how can I assist you today?"
   }
 }
