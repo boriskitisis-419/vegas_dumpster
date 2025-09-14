@@ -181,6 +181,6 @@ CONFIG = {
         },
       ]
     },
-    "greeting": "Hello!           What can I do for you?"
+    "greeting": "Hello! This is Chris!---      What can I do     for you?"
   }
 }

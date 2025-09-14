@@ -7,6 +7,8 @@ from datetime import datetime
 from dumpster_functions import FUNCTION_MAP
 from config import CONFIG
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from elevenlabs import VoiceSettings
@@ -29,6 +31,52 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
 SILENCE_TIMEOUT = 20
 FINAL_TIMEOUT = 20
+
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()  # Load environment variables from .env
+
+def download_twilio_recording(recording_sid: str, file_format: str = "wav", dual_channel: bool = True) -> str:
+    # Get credentials from environment variables
+    
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        raise ValueError("Twilio credentials are missing. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in your environment.")
+    
+    # Construct URL
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Recordings/{recording_sid}.{file_format}"
+    if dual_channel:
+        url += "?RequestedChannels=2"
+        
+    pst_time = datetime.now(ZoneInfo("America/Los_Angeles"))
+
+    file_name = pst_time.strftime("%m_%d_%H_%M")
+    folder_path = "recording/" + pst_time.strftime("%m_%d")
+
+    # Create the folder if it doesn't exist
+    os.makedirs(folder_path, exist_ok=True)
+    # Download recording
+    response = requests.get(url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+    
+    if response.status_code == 200:
+        filename = os.path.join(folder_path, f"{file_name}.{file_format}")  # e.g., "09_14/recording.wav"
+        with open(filename, "wb") as f:
+            f.write(response.content)
+        print(f"Recording downloaded successfully: {filename}")
+        return filename
+    else:
+        raise Exception(f"Failed to download recording. Status code: {response.status_code}\n{response.text}")
+
+def delete_twilio_recording(recording_sid: str):
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Recordings/{recording_sid}.json"
+
+    response = requests.delete(url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+
+    if response.status_code == 204:
+        print(f"Recording {recording_sid} deleted successfully.")
+    else:
+        print(f"Failed to delete recording {recording_sid}: {response.status_code} {response.text}")
 
 async def stream_ulab_audio_from_bytes(audio_stream, session, chunk_size=3200, delay=0.02):
     audio_stream.seek(0)  # start from beginning
@@ -57,11 +105,11 @@ async def stream_agent_text(text, session, chunk_size=6400, delay=0.02):
         text=text,
         model_id="eleven_turbo_v2",
         voice_settings=VoiceSettings(
-            stability=1,
-            similarity_boost=0.8,
-            style=0.8,
+            stability=0.9,
+            similarity_boost=1,
+            style=0.35,
             use_speaker_boost=True,
-            speed=1,
+            speed=0.9,
         ),
     )
 
@@ -80,6 +128,8 @@ class CallSession:
         self.finish_call_sent = False
         self.silence_task = None
         self.final_task = None        
+        self.call_sid = None
+        self.recording_sid = None
 
     async def nudge(self):
         print("[Silence Watchdog] User inactive. Sending nudge audio.")
@@ -92,7 +142,13 @@ class CallSession:
         await stream_ulaw_audio("deepgram_tts/finish_call.ulaw", self)
         await asyncio.sleep(6.0)
         await self.twilio_ws.close()
+        await self.sts_ws.close()
         print("[Final Hangup] Twilio socket closed, call ended.")
+        if self.recording_sid:
+            print("2. recording_sid is here", self.recording_sid)
+            await asyncio.sleep(6.0)
+            download_twilio_recording(self.recording_sid)
+            delete_twilio_recording(self.recording_sid)
 
     async def start_silence_timer(self):
         if self.silence_task:
@@ -213,10 +269,17 @@ async def sts_receiver(session: CallSession):
                         session.silence_task = None
 
                 elif mtype == "AgentAudioDone":
-                    if session.finish_call_sent:
+                    print("mtype-", mtype)
+                    if session.finish_call_sent:                        
                         await asyncio.sleep(3)
                         await session.twilio_ws.close()
-                        await session.sts_ws.close()
+                        await session.sts_ws.close()      
+
+                        if session.recording_sid:                  
+                            await asyncio.sleep(3)
+                            print("Finish call sent", session.recording_sid)
+                            download_twilio_recording(session.recording_sid)
+                            delete_twilio_recording(session.recording_sid)
                         return
                     await session.start_silence_timer()
 
@@ -226,31 +289,53 @@ async def sts_receiver(session: CallSession):
     except Exception as e:
         print(f"[sts_receiver] Exception: {e}")
 
-async def twilio_receiver(twilio_ws, audio_queue):
+async def twilio_receiver(twilio_ws, audio_queue, session: CallSession):
     try:
         async for message in twilio_ws:
             try:
                 data = json.loads(message)
                 event = data.get("event")
                 if event == "start":
+                    print(data["start"])
                     twilio_ws.streamsid = data["start"]["streamSid"]
-                    call_sid = data["start"]["callSid"]
+                    session.call_sid = data["start"]["callSid"]
                     
-                    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{call_sid}/Recordings.json"
-                    response = requests.post(url, auth=HTTPBasicAuth(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
-                    if response.status_code == 201:
-                        print("[Recording] Call recording started successfully.")
-                    else:
-                        print(f"[Recording] Failed to start recording: {response.status_code} {response.text}")
-                    print(f"[Twilio Receiver] Stream started, streamSid={twilio_ws.streamsid}")
+                    # Start Twilio recording
+                    if session.call_sid:
+                        url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{session.call_sid}/Recordings.json"
+                        response = requests.post(url, auth=HTTPBasicAuth(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+                        print(response)
+                        if response.status_code in [200, 201]:
+                            recording_data = response.json()  # parse JSON
+                            recording_sid = recording_data.get("sid")  # this is your Recording SID
+                            if recording_sid:
+                                print(f"[Recording] Started successfully, SID: {recording_sid}")
+                                session.recording_sid = recording_sid  # store in session for later download
+                            print("[Recording] Call recording started successfully.")
+                        else:
+                            print(f"[Recording] Failed to start recording: {response.status_code} {response.text}")
+
+                    print(f"[Twilio Receiver] Stream started, streamSid={twilio_ws.streamsid}, callSid={session.call_sid}")
+
                 elif event == "media":
                     media = data["media"]
                     chunk = base64.b64decode(media["payload"])
                     if media["track"] == "inbound":
                         audio_queue.put_nowait(chunk)
+
                 elif event == "stop":
+                    session.silence_task.cancel()
                     print("[Twilio Receiver] Stream stopped.")
+                    # Download recordings after the call ends
+                    if session.recording_sid:
+                        await session.twilio_ws.close()
+                        await session.sts_ws.close()
+                        await asyncio.sleep(6.0)
+                        print("3. recording_sid is here", session.recording_sid)
+                        download_twilio_recording(session.recording_sid)
+                        delete_twilio_recording(session.recording_sid)
                     break
+
             except Exception as e:
                 print(f"[Twilio receiver error] {e}")
                 break
@@ -272,16 +357,15 @@ async def twilio_handler(twilio_ws):
             await asyncio.gather(
                 sts_sender(sts_ws, audio_queue),
                 sts_receiver(session),
-                twilio_receiver(twilio_ws, audio_queue),
+                twilio_receiver(twilio_ws, audio_queue, session),
                 return_exceptions=True,
             )
     except Exception as e:
         print(f"[Twilio Handler] Exception: {e}")
         try:
-            await twilio_ws.close()
+            await session.twilio_ws.close()
         except: pass
 
-# ------------------- Main -------------------
 async def main():
     print("[Server] Starting...")
     async with websockets.serve(twilio_handler, "0.0.0.0", 5000):
