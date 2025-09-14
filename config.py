@@ -28,7 +28,7 @@ CONFIG = {
     "listen": {
       "provider": {
         "type": "deepgram",
-        "model": "nova-3",
+        "model": "nova-2",
       }
     },
     "think": {
@@ -181,6 +181,6 @@ CONFIG = {
         },
       ]
     },
-    "greeting": "Hello! Thank you for calling Vegas Dumpsters. This is Chris—how can I assist you today?"
+    "greeting": "Hello! Thank you for calling Vegas Dumpsters. This is Chris. What can I do for you?"
   }
 }

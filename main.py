@@ -53,11 +53,11 @@ async def stream_agent_text(text, session, chunk_size=3200, delay=0.02):
         text=text,
         model_id="eleven_multilingual_v2",
         voice_settings=VoiceSettings(
-            stability=0.8,
+            stability=0.9,
             similarity_boost=1.0,
             style=0.1,
             use_speaker_boost=True,
-            speed=1.0,
+            speed=0.9,
         ),
     )
     audio_bytes = b"".join(response)  # raw µ-law bytes
