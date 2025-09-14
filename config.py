@@ -181,6 +181,6 @@ CONFIG = {
         },
       ]
     },
-    "greeting": "Hello! Thank you for calling Vegas Dumpsters. This is Chris. What can I do for you?"
+    "greeting": "Hello!           What can I do for you?"
   }
 }

@@ -11,6 +11,8 @@ import os
 from dotenv import load_dotenv
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
+import requests
+from requests.auth import HTTPBasicAuth
 load_dotenv()
 
 DEEPGRAM_WS_URL = "wss://agent.deepgram.com/v1/agent/converse"
@@ -21,6 +23,9 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 elevenlabs = ElevenLabs(
     api_key=ELEVENLABS_API_KEY,
 )
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
 SILENCE_TIMEOUT = 20
 FINAL_TIMEOUT = 20
@@ -40,30 +45,27 @@ async def stream_ulab_audio_from_bytes(audio_stream, session, chunk_size=3200, d
 
         try:
             await session.twilio_ws.send(json.dumps(media_msg))
-            await asyncio.sleep(delay)
         except Exception as e:
             print(f"[stream_ulaw_audio] Error sending chunk: {e}")
             break
 
-async def stream_agent_text(text, session, chunk_size=3200, delay=0.02):
+async def stream_agent_text(text, session, chunk_size=6400, delay=0.02):
     # === Step 1: Generate 16kHz PCM WAV from ElevenLabs ===
     response = elevenlabs.text_to_speech.stream(
         voice_id=f"{ELEVENLABS_VOICE_ID}",
         output_format="ulaw_8000",
         text=text,
-        model_id="eleven_multilingual_v2",
+        model_id="eleven_turbo_v2",
         voice_settings=VoiceSettings(
-            stability=0.9,
-            similarity_boost=1.0,
-            style=0.1,
+            stability=1,
+            similarity_boost=0.8,
+            style=0.8,
             use_speaker_boost=True,
-            speed=0.9,
+            speed=1,
         ),
     )
-    audio_bytes = b"".join(response)  # raw µ-law bytes
 
-    for i in range(0, len(audio_bytes), chunk_size):
-        chunk = audio_bytes[i:i+chunk_size]
+    for chunk in response:
         media_msg = {
             "event": "media",
             "streamSid": getattr(session.twilio_ws, "streamsid", None),
@@ -157,7 +159,6 @@ async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, de
         }
         try:
             await session.twilio_ws.send(json.dumps(media_msg))
-            await asyncio.sleep(delay)
         except Exception as e:
             print(f"[stream_ulaw_audio] Error sending chunk: {e}")
             break
@@ -233,6 +234,14 @@ async def twilio_receiver(twilio_ws, audio_queue):
                 event = data.get("event")
                 if event == "start":
                     twilio_ws.streamsid = data["start"]["streamSid"]
+                    call_sid = data["start"]["callSid"]
+                    
+                    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Calls/{call_sid}/Recordings.json"
+                    response = requests.post(url, auth=HTTPBasicAuth(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+                    if response.status_code == 201:
+                        print("[Recording] Call recording started successfully.")
+                    else:
+                        print(f"[Recording] Failed to start recording: {response.status_code} {response.text}")
                     print(f"[Twilio Receiver] Stream started, streamSid={twilio_ws.streamsid}")
                 elif event == "media":
                     media = data["media"]
