@@ -43,6 +43,5 @@ if __name__ == "__main__":
     # Example usage
     check_activity = "Hello! Are you still there?"
     finish_call = "Seems like you are so busy! Thank you for your time. Have a great day."
-    text = "Hello, this is a test of ElevenLabs text-to-speech."
-    output_file = text_to_speech_file(finish_call)
+    output_file = text_to_speech_file(check_activity)
     print(f"Saved audio file: {output_file}")

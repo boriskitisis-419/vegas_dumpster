@@ -29,8 +29,8 @@ elevenlabs = ElevenLabs(
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
-SILENCE_TIMEOUT = 20
-FINAL_TIMEOUT = 20
+SILENCE_TIMEOUT = 35
+FINAL_TIMEOUT = 10
 
 import os
 import requests
@@ -78,49 +78,51 @@ def delete_twilio_recording(recording_sid: str):
     else:
         print(f"Failed to delete recording {recording_sid}: {response.status_code} {response.text}")
 
-async def stream_ulab_audio_from_bytes(audio_stream, session, chunk_size=3200, delay=0.02):
-    audio_stream.seek(0)  # start from beginning
-    audio_bytes = audio_stream.read()
+async def stream_agent_text(text, session):
+    if not hasattr(session, "bot_speaking_count"):
+        session.bot_speaking_count = 0
 
-    for i in range(0, len(audio_bytes), chunk_size):
-        chunk = audio_bytes[i:i + chunk_size]
+    session.bot_speaking_count += 1
+    session.bot_speaking = True
 
-        media_msg = {
-            "event": "media",
-            "streamSid": getattr(session.twilio_ws, "streamsid", None),
-            "media": {"payload": base64.b64encode(chunk).decode("ascii")},
-        }
-
-        try:
-            await session.twilio_ws.send(json.dumps(media_msg))
-        except Exception as e:
-            print(f"[stream_ulaw_audio] Error sending chunk: {e}")
-            break
-
-async def stream_agent_text(text, session, chunk_size=6400, delay=0.02):
-    # === Step 1: Generate 16kHz PCM WAV from ElevenLabs ===
     response = elevenlabs.text_to_speech.stream(
         voice_id=f"{ELEVENLABS_VOICE_ID}",
         output_format="ulaw_8000",
         text=text,
         model_id="eleven_turbo_v2",
         voice_settings=VoiceSettings(
-            stability=0.9,
+            stability=1,
             similarity_boost=1,
-            style=0.35,
+            style=0.7,
             use_speaker_boost=True,
             speed=0.9,
         ),
     )
 
+    audio_bytes = b""
     for chunk in response:
+        audio_bytes += chunk
+
         media_msg = {
             "event": "media",
             "streamSid": getattr(session.twilio_ws, "streamsid", None),
             "media": {"payload": base64.b64encode(chunk).decode("ascii")},
         }
         await session.twilio_ws.send(json.dumps(media_msg))
-    
+
+    duration_sec = len(audio_bytes) / 8000.0
+
+    asyncio.create_task(_mark_bot_done_after(duration_sec, session, text))
+
+
+async def _mark_bot_done_after(duration, session, text):
+    await asyncio.sleep(duration)
+
+    if hasattr(session, "bot_speaking_count") and session.bot_speaking_count > 0:
+        session.bot_speaking_count -= 1
+
+    session.bot_speaking = session.bot_speaking_count > 0
+
 class CallSession:
     def __init__(self, twilio_ws, sts_ws):
         self.twilio_ws = twilio_ws
@@ -130,6 +132,10 @@ class CallSession:
         self.final_task = None        
         self.call_sid = None
         self.recording_sid = None
+        self.bot_speaking = None
+        self.bot_speaking_count = 0
+        self.interupt_word = ""
+        self.ignore = False
 
     async def nudge(self):
         print("[Silence Watchdog] User inactive. Sending nudge audio.")
@@ -160,7 +166,6 @@ class CallSession:
         await asyncio.sleep(SILENCE_TIMEOUT)
         await self.nudge()
 
-# ------------------- Function Calls -------------------
 def execute_function_call(func_name, arguments):
     if func_name in FUNCTION_MAP:
         result = FUNCTION_MAP[func_name](**arguments)
@@ -196,8 +201,7 @@ async def handle_function_call_request(decoded, session: CallSession):
         except Exception as e:
             print(f"[Function call finish_call] Error sending: {e}")
 
-# ------------------- Pre-recorded .ulaw streaming -------------------
-async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, delay: float = 0.02):
+async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 64000):
     try:
         with open(file_path, "rb") as f:
             audio_bytes = f.read()
@@ -220,7 +224,6 @@ async def stream_ulaw_audio(file_path: str, session, chunk_size: int = 32000, de
             break
     print(f"[Agent Audio] Finished streaming {file_path}")
 
-# ------------------- STS / Twilio handlers -------------------
 async def handle_text_message(decoded, session: CallSession):
     msg_type = decoded.get("type")
     msg_role = decoded.get("role")
@@ -228,10 +231,33 @@ async def handle_text_message(decoded, session: CallSession):
 
     if msg_type == "ConversationText":
         if msg_role == "assistant":
-            print(f"Bot: {msg_content}")
-            await stream_agent_text(msg_content, session)
+            if session.ignore == False:
+                print(f"Bot: {msg_content}")
+                await stream_agent_text(msg_content, session)
+            else:
+                print("[Special Case]: Ignored to say, ", msg_content)
         else:
+            if session.bot_speaking:
+                session.interupt_word = msg_content
+                print("     [LOG] Bot was interrupted while speaking!")
+                print("     interupt word: ", session.interupt_word)
+                MIN_WORDS = 2
+                words = session.interupt_word.split()
+                if len(words) < MIN_WORDS:
+                    session.ignore = True
+                    print("     [Ignored] Too few words:", session.interupt_word)
+                    print("     $$$$$$$$$$$$$$$$$$$$$[LOG] Trivial user sound, ignoring interruption.")
+                else:
+                    clear_message = {
+                        "event": "clear",
+                        "streamSid": getattr(session.twilio_ws, "streamsid", None),
+                    }
+                    try:
+                        await session.twilio_ws.send(json.dumps(clear_message))
+                    except: pass
+
             print(f"Chris: {msg_content}")
+            print("##################################\n")
 
     if msg_type == "FunctionCallRequest":
         await handle_function_call_request(decoded, session)
@@ -254,22 +280,16 @@ async def sts_receiver(session: CallSession):
                     print(f"[STS JSON parse error] {e}")
                     continue
                 mtype = decoded.get("type")
-
+        
                 if mtype == "UserStartedSpeaking":
+                    session.ignore = False
+                    print("\n##################################")
                     print("[Barge-in] User started speaking.")
-                    clear_message = {
-                        "event": "clear",
-                        "streamSid": getattr(session.twilio_ws, "streamsid", None),
-                    }
-                    try:
-                        await session.twilio_ws.send(json.dumps(clear_message))
-                    except: pass
                     if session.silence_task:
                         session.silence_task.cancel()
                         session.silence_task = None
 
                 elif mtype == "AgentAudioDone":
-                    print("mtype-", mtype)
                     if session.finish_call_sent:                        
                         await asyncio.sleep(3)
                         await session.twilio_ws.close()

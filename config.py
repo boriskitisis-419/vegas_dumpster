@@ -28,7 +28,7 @@ CONFIG = {
     "listen": {
       "provider": {
         "type": "deepgram",
-        "model": "nova-2",
+        "model": "nova-3",
       }
     },
     "think": {
@@ -47,7 +47,7 @@ CONFIG = {
             "properties": {
               "prior_ordered": { "type": "boolean", "description": "Whether the customer has ordered from us before"},
               "customer_name": { "type": "string", "description": "Customer's full name"},
-              "size_yards": { "type": "string", "description": "Dumpster size (10, 15, 20, 30, or 40 yards)" },
+              "size_yards": { "type": "string", "description": "We offer 10, 15, and 20-yard dumpsters for smaller jobs. For bigger projects, choose our 30 or 40-yard options" },
               "delivery_date": { "type": "string", "description": "Requested delivery date" },
               "time_slot": { "type": "string", "description": "Preferred delivery time slot"},
               "address": { "type": "string", "description": "Full delivery address, including ZIP code"},
@@ -181,6 +181,6 @@ CONFIG = {
         },
       ]
     },
-    "greeting": "Hello! This is Chris!---      What can I do     for you?"
+    "greeting": "Hello, this is Chris. What can I do for you?"
   }
 }
