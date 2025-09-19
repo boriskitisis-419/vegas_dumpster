@@ -1,6 +1,26 @@
 from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Deepgram
+DEEPGRAM_WS_URL = "wss://agent.deepgram.com/v1/agent/converse"
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+
+# ElevenLabs
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+
+# Twilio
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+
+# Timeouts
+SILENCE_TIMEOUT = 35
+FINAL_TIMEOUT = 10
 
 # Load prompt from external file
 with open("prompts/inbound_prompt.txt", "r", encoding="utf-8") as f:
@@ -41,7 +61,7 @@ CONFIG = {
       "functions": [
         {
           "name": "place_order",
-          "description": load_description("descriptions/place_order.txt"),
+          "description": load_description("prompts/place_order.txt"),
           "parameters": {
             "type": "object",
             "properties": {
@@ -61,7 +81,7 @@ CONFIG = {
         },
         {
           "name": "swap_service",
-          "description": load_description("descriptions/swap_service.txt"),
+          "description": load_description("prompts/swap_service.txt"),
           "parameters": {
             "type": "object",
             "properties": {
@@ -99,7 +119,7 @@ CONFIG = {
         },
         {
           "name": "final_pickup_service",
-          "description": load_description("descriptions/final_pickup_service.txt"),
+          "description": load_description("prompts/final_pickup_service.txt"),
           "parameters": {
             "type": "object",
             "properties": {
@@ -117,7 +137,7 @@ CONFIG = {
         },
         {
           "name": "extend_rental_service",
-          "description": load_description("descriptions/extend_rental_service.txt"),
+          "description": load_description("prompts/extend_rental_service.txt"),
           "parameters": {
             "type": "object",
             "properties": {
@@ -148,7 +168,7 @@ CONFIG = {
         },
         {
           "name": "delayed_pickup_service",
-          "description": load_description("descriptions/delayed_pickup_service.txt"),
+          "description": load_description("prompts/delayed_pickup_service.txt"),
           "parameters": {
             "type": "object",
             "properties": {
@@ -170,7 +190,7 @@ CONFIG = {
         },
         {
           "name": "finish_call",
-          "description": load_description("descriptions/finish_call.txt"),
+          "description": load_description("prompts/finish_call.txt"),
           "parameters": {
             "type": "object",
             "properties": {
